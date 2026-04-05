@@ -1,10 +1,18 @@
 from fastapi import FastAPI, UploadFile, File
 from resume_parser import parse_resume
+from job_fetcher import fetch_all_jobs
 
-from job_fetcher import fetch_all_jobs   
+from db import resumes_collection
+
+from datetime import datetime
+
 
 app = FastAPI()
 
+
+# -----------------------
+# PARSE RESUME ENDPOINT
+# -----------------------
 
 @app.post("/parse-resume")
 async def parse_resume_endpoint(file: UploadFile = File(...)):
@@ -12,6 +20,15 @@ async def parse_resume_endpoint(file: UploadFile = File(...)):
     content = await file.read()
 
     result = await parse_resume(content)
+
+    # add timestamp
+    result["created_at"] = datetime.utcnow()
+
+    # store in mongodb
+    inserted = resumes_collection.insert_one(result)
+
+    # convert ObjectId to string
+    result["_id"] = str(inserted.inserted_id)
 
     return result
 
@@ -27,5 +44,5 @@ async def fetch_jobs():
 
     return {
         "count": len(jobs),
-        "jobs": jobs[:10]   # limit for now
+        "jobs": jobs
     }

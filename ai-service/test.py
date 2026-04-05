@@ -1,9 +1,10 @@
-from job_fetcher import fetch_all_jobs
+from db import resumes_collection
 
-jobs = fetch_all_jobs()
+test = {
+    "name": "Sibyl Test",
+    "status": "connected"
+}
 
-print("\nSample jobs:\n")
+resumes_collection.insert_one(test)
 
-for job in jobs[:5]:
-    print(job)
-    print("-" * 50)
+print("Connected successfully!")

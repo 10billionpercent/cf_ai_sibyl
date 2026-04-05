@@ -3,6 +3,8 @@ python-dotenv>=1.0
 requests==2.32.3
 beautifulsoup4==4.12.3
 feedparser==6.0.11
+pymongo==4.8.0
+dnspython==2.6.1
 
 # Optional but recommended dependencies (used internally by feedparser)
 sgmllib3k==1.0.0
