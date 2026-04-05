@@ -10,9 +10,13 @@ Fields:
 - skills
 - experience_level
 - preferences
-- strengths
 - technologies
 
-Be conservative. Do not hallucinate.
+Instructions:
+
+- Infer preferences based on skills, projects, and technologies
+- Preferences should represent what kind of roles the candidate is likely interested in
+- Do not hallucinate unrelated fields
+- If unsure, make reasonable inference based on evidence in resume
 
 Return JSON only.
