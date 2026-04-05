@@ -110,14 +110,16 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    feedback = query.data
+    action, job_id = query.data.split("|")
 
-    logger.info(f"Feedback received: {feedback}")
+    logger.info(f"Feedback: {action} | Job: {job_id}")
 
-    await query.edit_message_text(
-        text=f"Feedback received: {feedback}"
-    )
+    if action == "more":
+        text = "👍 Got it — I'll show more like this"
+    else:
+        text = "👎 Got it — I'll show less like this"
 
+    await query.edit_message_text(text=text)
 
 # ----------------------
 # RESUME HANDLER
@@ -205,6 +207,25 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• UI"
     )
 
+def feedback_keyboard(job_id):
+
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                "👍 Show more like this",
+                callback_data=f"more|{job_id}"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                "👎 Show less like this",
+                callback_data=f"less|{job_id}"
+            )
+        ]
+    ]
+
+    return InlineKeyboardMarkup(keyboard)
+
 async def jobs(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     msg = await update.message.reply_text(
@@ -228,32 +249,70 @@ async def jobs(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         data = response.json()
 
+        print("BOT RECIEVED ", data)
+
         jobs = data.get("jobs", [])
 
+        if not isinstance(jobs, list):
+            await msg.edit_text("❌ Backend error")
+            return
+        
         if not jobs:
             await msg.edit_text(
-                "No internships found 😔"
-            )
+        "🧠 I analyzed all internships.\n\n"
+        "❌ No strong matches found.\n\n"
+        "I'll keep searching..."
+    )
             return
 
         await msg.edit_text(
-            f"🔥 Found {len(jobs)} internships!"
+        f"🔥 Found {len(jobs)} strong matches!"
         )
 
         for job in jobs:
+            match = job.get("match") or {}
+            score = match.get("match_score", "?")
 
             message = (
-                f"🔥 Internship Found\n\n"
-                f"🏢 {job['title']}\n"
-                f"🌐 {job['source']}\n\n"
-                f"🔗 {job['url']}"
+                f"🔥 {score} MATCH — {job.get('title')}\n\n"
+                f"🏢 {match.get('company', 'Unknown')}\n"
+                f"🌐 {job.get('source')}\n\n"
             )
 
-            await update.message.reply_text(message)
+            # Why
+            if match.get("why"):
+                message += "🧠 Why:\n"
+                for item in match["why"]:
+                    message += f"• {item}\n"
+                message += "\n"
+
+            # Missing
+            if match.get("missing"):
+                message += "⚠️ Missing:\n"
+                for item in match["missing"]:
+                    message += f"• {item}\n"
+                message += "\n"
+
+            # Uncertainty
+            if match.get("uncertainty"):
+                message += "🤔 Uncertainty:\n"
+                for item in match["uncertainty"]:
+                    message += f"• {item}\n"
+                message += "\n"
+
+            message += f"🔗 Apply: {job.get('url')}"
+
+            job_id = job.get("_id", job.get("url"))
+
+            await update.message.reply_text(
+                message,
+                reply_markup=feedback_keyboard(job_id)
+            )
+        
 
     except Exception as e:
 
-        logger.error(e)
+        logger.exception("Jobs command crashed")
 
         await msg.edit_text(
             "❌ Failed to fetch internships"

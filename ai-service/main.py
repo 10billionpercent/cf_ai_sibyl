@@ -1,7 +1,8 @@
 from fastapi import FastAPI, UploadFile, File
+
 from resume_parser import parse_resume
 from job_fetcher import fetch_all_jobs
-
+from job_matcher import match_jobs
 from db import resumes_collection, jobs_collection
 
 from datetime import datetime, timezone
@@ -37,19 +38,32 @@ async def parse_resume_endpoint(file: UploadFile = File(...)):
 @app.get("/fetch-jobs")
 async def fetch_jobs():
 
+    # get latest resume
+    resume = resumes_collection.find_one(
+        sort=[("created_at", -1)]
+    )
+
+    if not resume:
+        return {"error": "No resume found"}
+
     jobs = fetch_all_jobs()
 
-    # add timestamp to each job
+    # add timestamp
     for job in jobs:
         job["created_at"] = datetime.now(timezone.utc)
 
-    # insert into mongodb
+    # store in mongodb
     if jobs:
         inserted = jobs_collection.insert_many(jobs)
+
+        # still convert _id for API response
         for job, _id in zip(jobs, inserted.inserted_ids):
             job["_id"] = str(_id)
 
+    # match jobs
+    matched = await match_jobs(resume, jobs)
+
     return {
-        "count": len(jobs),
-        "jobs": jobs
+        "count": len(matched),
+        "jobs": matched
     }

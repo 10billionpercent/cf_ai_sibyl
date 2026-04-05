@@ -13,9 +13,28 @@ load_dotenv()
 ACCOUNT_ID = os.getenv("CLOUDFLARE_ACCOUNT_ID")
 API_TOKEN = os.getenv("CLOUDFLARE_API_TOKEN")
 
-
 PROMPT_PATH = Path("prompts/resume_prompt.txt")
 
+async def get_embedding(text):
+
+    url = f"https://api.cloudflare.com/client/v4/accounts/{ACCOUNT_ID}/ai/run/@cf/baai/bge-small-en-v1.5"
+
+    async with httpx.AsyncClient(timeout=60) as client:
+
+        response = await client.post(
+            url,
+            headers={
+                "Authorization": f"Bearer {API_TOKEN}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "text": text
+            }
+        )
+
+    result = response.json()
+
+    return result["result"]["data"][0]
 
 def extract_text(pdf_bytes):
 
@@ -88,5 +107,17 @@ async def parse_resume(pdf_bytes):
     text = extract_text(pdf_bytes)
 
     parsed = await call_llm(text)
+
+    # create summary text
+    summary_text = f"""
+Role: {parsed.get("role")}
+Skills: {parsed.get("skills")}
+Preferences: {parsed.get("preferences")}
+Technologies: {parsed.get("technologies")}
+"""
+
+    embedding = await get_embedding(summary_text)
+
+    parsed["embedding"] = embedding
 
     return parsed
