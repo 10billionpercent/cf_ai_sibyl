@@ -1,6 +1,8 @@
 import os
 import logging
+import httpx
 from dotenv import load_dotenv
+import io
 
 from telegram import (
     Update,
@@ -133,20 +135,61 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file = update.message.document
 
     await update.message.reply_text(
-        f"✅ Resume received: {file.file_name}\n\n"
-        "Processing..."
+        f"✅ Resume received: {file.file_name}"
     )
 
-    # placeholder
-    await update.message.reply_text(
-        "🧠 Resume processed\n\n"
-        "Detected:\n"
-        "• React\n"
-        "• Python\n"
-        "• UI"
+    thinking_msg = await update.message.reply_text(
+        "🧠 Analyzing resume...\nThis may take a few seconds..."
     )
 
+    try:
+        file_obj = await file.get_file()
+        file_bytes = await file_obj.download_as_bytearray()
 
+        file_stream = io.BytesIO(file_bytes)
+
+        async with httpx.AsyncClient(timeout=60) as client:
+
+            response = await client.post(
+                "http://127.0.0.1:8000/parse-resume",
+                files={
+                    "file": ("resume.pdf", file_stream, "application/pdf")
+                }
+            )
+
+        data = response.json()
+
+        message = format_resume(data)
+
+        await thinking_msg.edit_text(message)
+
+    except Exception as e:
+        logger.error(f"Resume parsing failed: {e}")
+
+        await thinking_msg.edit_text(
+            "❌ Failed to parse resume.\nPlease try again."
+        )
+
+def format_resume(data):
+
+    message = "🧠 Resume Parsed\n\n"
+
+    if data.get("role"):
+        message += f"🎯 Role:\n{data['role']}\n\n"
+
+    if data.get("skills"):
+        message += "🛠 Skills:\n"
+        for skill in data["skills"][:10]:
+            message += f"• {skill}\n"
+        message += "\n"
+
+    if data.get("technologies"):
+        message += "⚙️ Technologies:\n"
+        for tech in data["technologies"][:10]:
+            message += f"• {tech}\n"
+        message += "\n"
+
+    return message
 # ----------------------
 # PROFILE
 # ----------------------
