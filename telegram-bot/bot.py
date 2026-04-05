@@ -148,7 +148,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         file_stream = io.BytesIO(file_bytes)
 
-        async with httpx.AsyncClient(timeout=60) as client:
+        async with httpx.AsyncClient(timeout=180) as client:
 
             response = await client.post(
                 "http://127.0.0.1:8000/parse-resume",
@@ -205,6 +205,59 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• UI"
     )
 
+async def jobs(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    msg = await update.message.reply_text(
+        "🔎 Searching internships..."
+    )
+
+    await msg.edit_text(
+    "🔎 Searching internships...\n\nThis may take ~30 seconds..."
+    )
+
+    try:
+        await msg.edit_text("🔎 Fetching HackerNews...")
+
+        async with httpx.AsyncClient(timeout=180) as client:
+
+            response = await client.get(
+                "http://127.0.0.1:8000/fetch-jobs"
+            )
+
+        await msg.edit_text("🧠 Processing results...")
+
+        data = response.json()
+
+        jobs = data.get("jobs", [])
+
+        if not jobs:
+            await msg.edit_text(
+                "No internships found 😔"
+            )
+            return
+
+        await msg.edit_text(
+            f"🔥 Found {len(jobs)} internships!"
+        )
+
+        for job in jobs:
+
+            message = (
+                f"🔥 Internship Found\n\n"
+                f"🏢 {job['title']}\n"
+                f"🌐 {job['source']}\n\n"
+                f"🔗 {job['url']}"
+            )
+
+            await update.message.reply_text(message)
+
+    except Exception as e:
+
+        logger.error(e)
+
+        await msg.edit_text(
+            "❌ Failed to fetch internships"
+        )
 
 # ----------------------
 # MAIN
@@ -219,6 +272,7 @@ def main():
     app.add_handler(CommandHandler("test", send_test_job))
     app.add_handler(CommandHandler("resume", resume))
     app.add_handler(CommandHandler("profile", profile))
+    app.add_handler(CommandHandler("jobs", jobs))
 
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
 
