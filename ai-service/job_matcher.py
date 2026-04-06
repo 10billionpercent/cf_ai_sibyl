@@ -15,6 +15,16 @@ load_dotenv()
 ACCOUNT_ID = os.getenv("CLOUDFLARE_ACCOUNT_ID")
 CLOUDFLARE_API_TOKEN = os.getenv("CLOUDFLARE_API_TOKEN")
 GROQ_API_TOKEN = os.getenv("GROQ_API_KEY")
+GROQ_FAST_MODEL = os.getenv("GROQ_FAST_MODEL", "llama-3.1-8b-instant")
+GROQ_SLOW_MODEL = os.getenv("GROQ_SLOW_MODEL", "llama-3.3-70b-versatile")
+GROQ_SLOW_TOP_N = int(os.getenv("GROQ_SLOW_TOP_N", "0"))
+GROQ_FAST_SLEEP = float(os.getenv("GROQ_FAST_SLEEP", "8"))
+GROQ_SLOW_SLEEP = float(os.getenv("GROQ_SLOW_SLEEP", "15"))
+GROQ_SLOW_BATCH_SIZE = int(os.getenv("GROQ_SLOW_BATCH_SIZE", "4"))
+GROQ_SLOW_BATCH_SLEEP = float(os.getenv("GROQ_SLOW_BATCH_SLEEP", "60"))
+GROQ_MAX_TOKENS = int(os.getenv("GROQ_MAX_TOKENS", "300"))
+JOB_DESC_MAX_CHARS = int(os.getenv("JOB_DESC_MAX_CHARS", "1200"))
+RESUME_LIST_MAX = int(os.getenv("RESUME_LIST_MAX", "12"))
 PROMPT_PATH = Path("prompts/job_match_prompt.txt")
 
 
@@ -80,6 +90,51 @@ def similarity(a, b):
     return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
 
 
+def _trim_text(value, max_chars):
+    if not value or not isinstance(value, str):
+        return ""
+    text = value.strip()
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars].rsplit(" ", 1)[0].strip()
+
+
+def _pick_resume_fields(resume):
+    return {
+        "role": resume.get("role"),
+        "experience_level": resume.get("experience_level"),
+        "skills": (resume.get("skills") or [])[:RESUME_LIST_MAX],
+        "preferences": (resume.get("preferences") or [])[:RESUME_LIST_MAX],
+        "technologies": (resume.get("technologies") or [])[:RESUME_LIST_MAX],
+    }
+
+
+def _pick_job_fields(job):
+    return {
+        "title": job.get("title"),
+        "company": job.get("company"),
+        "location": job.get("location"),
+        "source": job.get("source"),
+        "apply_url": job.get("apply_url"),
+        "job_url": job.get("job_url"),
+        "description": _trim_text(job.get("description", ""), JOB_DESC_MAX_CHARS),
+    }
+
+
+def _extract_json(text):
+    if not text or not isinstance(text, str):
+        raise ValueError("Empty response content")
+    content = text.strip()
+    if content.startswith("```"):
+        content = content.strip("`")
+        content = content.replace("json", "").strip()
+    first = content.find("{")
+    last = content.rfind("}")
+    if first == -1 or last == -1 or last < first:
+        raise ValueError("No JSON object found in response")
+    return content[first:last + 1]
+
+
 # -----------------------
 # 70B EXPLAIN MATCH (GROQ)
 # -----------------------
@@ -102,13 +157,11 @@ def _parse_retry_seconds(message):
     return None
 
 
-async def call_llm(job, resume, max_retries=6, retry_delay=8):
+async def call_llm(job, resume, model, max_retries=12, retry_delay=12):
     prompt = PROMPT_PATH.read_text()
 
-    safe_job = make_json_safe(job)
-
-    # Strip embedding to keep prompt clean
-    resume_safe = make_json_safe({k: v for k, v in resume.items() if k != "embedding"})
+    safe_job = make_json_safe(_pick_job_fields(job))
+    resume_safe = make_json_safe(_pick_resume_fields(resume))
 
     full_prompt = f"""
 {prompt}
@@ -133,7 +186,7 @@ Job Posting:
                     "Content-Type": "application/json"
                 },
                 json={
-                    "model": "llama-3.3-70b-versatile",
+                    "model": model,
                     "messages": [
                         {
                             "role": "system",
@@ -144,19 +197,35 @@ Job Posting:
                             "content": full_prompt
                         }
                     ],
-                    "temperature": 0
+                    "temperature": 0,
+                    "max_tokens": GROQ_MAX_TOKENS
                 }
             )
 
-            result = response.json()
+            try:
+                result = response.json()
+            except Exception:
+                raw = await response.aread()
+                preview = raw[:1000].decode("utf-8", errors="replace")
+                print(
+                    f"Groq non-JSON response (status={response.status_code}, model={model}, attempt={attempt}): {preview}"
+                )
+                raise RuntimeError("Groq returned non-JSON response")
 
             if result.get("error", {}).get("code") == "rate_limit_exceeded":
                 message = result.get("error", {}).get("message", "")
                 wait_seconds = _parse_retry_seconds(message) or retry_delay
-                wait_seconds = max(wait_seconds, 2)
+                wait_seconds = max(wait_seconds + 5, 10)
                 print(f"Groq rate limited, retrying in {wait_seconds:.2f}s (attempt {attempt}/{max_retries})")
                 await asyncio.sleep(wait_seconds)
                 continue
+
+            if response.status_code != 200 or "choices" not in result:
+                print(
+                    "Groq unexpected response:",
+                    {"status": response.status_code, "model": model, "attempt": attempt, "result": result}
+                )
+                raise RuntimeError("Groq returned unexpected response")
 
             print("Groq response:", result)
             break
@@ -164,14 +233,16 @@ Job Posting:
             raise RuntimeError("Groq rate limit exceeded after retries")
 
     content = result["choices"][0]["message"]["content"]
+    payload = _extract_json(content)
+    return json.loads(payload)
 
-    content = content.strip()
 
-    if content.startswith("```"):
-        content = content.strip("`")
-        content = content.replace("json", "").strip()
+async def call_llm_fast(job, resume):
+    return await call_llm(job, resume, model=GROQ_FAST_MODEL, max_retries=8, retry_delay=6)
 
-    return json.loads(content)
+
+async def call_llm_slow(job, resume):
+    return await call_llm(job, resume, model=GROQ_SLOW_MODEL, max_retries=12, retry_delay=12)
 
 
 # -----------------------
@@ -220,23 +291,74 @@ URL: {job.get("url")}
 
     print(f"Total jobs to explain: {len(all_jobs)}")
 
-    # explain every job
-    BATCH_SIZE = 8
-
+    # explain every job (top N with 70B, rest with fast model)
     for i, job in enumerate(all_jobs, start=1):
 
         try:
 
-            await asyncio.sleep(8)
-            result = await call_llm(job, resume)
+            if i <= GROQ_SLOW_TOP_N:
+                await asyncio.sleep(GROQ_SLOW_SLEEP)
+                result = await call_llm_slow(job, resume)
+            else:
+                await asyncio.sleep(GROQ_FAST_SLEEP)
+                result = await call_llm_fast(job, resume)
 
             job["match"] = result
             matched.append(job)
 
-            if i % BATCH_SIZE == 0:
-                await asyncio.sleep(30)
+            if i <= GROQ_SLOW_TOP_N and i % GROQ_SLOW_BATCH_SIZE == 0:
+                await asyncio.sleep(GROQ_SLOW_BATCH_SLEEP)
 
         except Exception as e:
             print("Match failed:", e)
 
     return matched
+
+
+async def match_jobs_stream(resume, jobs, on_result):
+
+    resume_embedding = resume.get("embedding")
+
+    if not resume_embedding:
+        print("No resume embedding found")
+        return
+
+    scored = []
+    total = len(jobs)
+
+    for idx, job in enumerate(jobs, start=1):
+
+        job_text = f"""
+Title: {job.get("title")}
+Source: {job.get("source")}
+URL: {job.get("url")}
+"""
+
+        try:
+            print(f"Embedding {idx}/{total} ... {job.get('company', 'Unknown')} | {job.get('title', 'Untitled')}")
+            job_embedding = await get_embedding(job_text)
+            score = similarity(resume_embedding, job_embedding)
+            scored.append((score, job))
+        except Exception as e:
+            print("Embedding failed:", e)
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    all_jobs = [job for score, job in scored]
+
+    print(f"Total jobs to explain: {len(all_jobs)}")
+
+    for i, job in enumerate(all_jobs, start=1):
+        try:
+            if i <= GROQ_SLOW_TOP_N:
+                await asyncio.sleep(GROQ_SLOW_SLEEP)
+                result = await call_llm_slow(job, resume)
+            else:
+                await asyncio.sleep(GROQ_FAST_SLEEP)
+                result = await call_llm_fast(job, resume)
+            job["match"] = result
+            await on_result(job)
+
+            if i <= GROQ_SLOW_TOP_N and i % GROQ_SLOW_BATCH_SIZE == 0:
+                await asyncio.sleep(GROQ_SLOW_BATCH_SLEEP)
+        except Exception as e:
+            print("Match failed:", e)

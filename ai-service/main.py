@@ -3,12 +3,14 @@ import json
 import httpx
 import time
 import hashlib
+import asyncio
+import uuid
 
 from fastapi import FastAPI, UploadFile, File, Body
 
 from resume_parser import parse_resume
 from job_fetcher import fetch_all_jobs
-from job_matcher import match_jobs
+from job_matcher import match_jobs, match_jobs_stream
 from db import resumes_collection, jobs_collection
 
 from dotenv import load_dotenv
@@ -16,6 +18,8 @@ from datetime import datetime, timezone
 
 
 app = FastAPI()
+
+RUNS = {}
 
 load_dotenv()
 
@@ -245,6 +249,108 @@ async def fetch_jobs():
             message=str(e)
         )
         return {"error": "System error"}
+
+
+# -----------------------
+# FETCH JOBS (STREAM MODE)
+# -----------------------
+
+@app.post("/fetch-jobs-stream")
+async def fetch_jobs_stream():
+
+    run_id = str(uuid.uuid4())
+    RUNS[run_id] = {
+        "status": "running",
+        "results": [],
+        "total": 0,
+        "completed": 0,
+        "error": None
+    }
+
+    async def on_result(job):
+        RUNS[run_id]["results"].append(job)
+        RUNS[run_id]["completed"] += 1
+
+    async def runner():
+        try:
+            resume = resumes_collection.find_one(
+                sort=[("created_at", -1)]
+            )
+
+            if not resume:
+                RUNS[run_id]["status"] = "error"
+                RUNS[run_id]["error"] = "No resume found"
+                return
+
+            fetch_start = time.perf_counter()
+            jobs = fetch_all_jobs()
+            fetch_seconds = time.perf_counter() - fetch_start
+            RUNS[run_id]["total"] = len(jobs)
+
+            await insert_event_log(
+                event_type="fetch_complete",
+                source="multi",
+                status="success",
+                message=f"Fetched {len(jobs)} jobs in {fetch_seconds:.2f}s"
+            )
+
+            for job in jobs:
+                job["created_at"] = datetime.now(timezone.utc)
+
+            match_start = time.perf_counter()
+            await match_jobs_stream(resume, jobs, on_result)
+            match_seconds = time.perf_counter() - match_start
+
+            await insert_event_log(
+                event_type="match_complete",
+                source="multi",
+                status="success",
+                message=f"Matched {RUNS[run_id]['completed']} jobs in {match_seconds:.2f}s"
+            )
+
+            for job in RUNS[run_id]["results"]:
+                match_result = job.get("match", {})
+                await insert_job_log(job, match_result)
+
+            total_seconds = time.perf_counter() - fetch_start
+            await insert_event_log(
+                event_type="pipeline_complete",
+                source="multi",
+                status="success",
+                message=f"Pipeline finished in {total_seconds:.2f}s"
+            )
+
+            RUNS[run_id]["status"] = "done"
+
+        except Exception as e:
+            RUNS[run_id]["status"] = "error"
+            RUNS[run_id]["error"] = str(e)
+            await insert_event_log(
+                event_type="system_error",
+                status="fail",
+                message=str(e)
+            )
+
+    asyncio.create_task(runner())
+    return {"run_id": run_id}
+
+
+@app.get("/fetch-results")
+async def fetch_results(run_id: str, since: int = 0):
+    run = RUNS.get(run_id)
+    if not run:
+        return {"error": "Invalid run_id"}
+
+    results = run["results"][since:]
+
+    return {
+        "status": run["status"],
+        "total": run["total"],
+        "completed": run["completed"],
+        "results": results,
+        "next": since + len(results),
+        "error": run["error"]
+    }
 
 
 # -----------------------

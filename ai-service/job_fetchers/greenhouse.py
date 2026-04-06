@@ -24,6 +24,42 @@ ROLE_KEYWORDS = [
     "frontend engineer",
     "front-end"
 ]
+SPECIALIZATION_KEYWORDS = [
+    "full stack",
+    "full-stack",
+    "fullstack",
+    "frontend",
+    "front-end",
+    "frontend engineer",
+    "web",
+    "ui",
+    "user interface"
+]
+SPECIALIZATION_ALLOWLIST_TERMS = [
+    "summer",
+    "winter",
+    "spring",
+    "fall",
+    "autumn",
+    "placement",
+    "industry placement",
+    "co-op",
+    "coop",
+    "remote",
+    "hybrid",
+    "on-site",
+    "onsite",
+    "part-time",
+    "full-time",
+    "12 month",
+    "12-month",
+    "6 month",
+    "6-month",
+    "2025",
+    "2026",
+    "2027",
+    "2028"
+]
 HEADERS = {"User-Agent": "Sibyl Internship Agent"}
 RECENT_DAYS = 7
 
@@ -38,7 +74,19 @@ def _is_target_role(title):
     if not title:
         return False
     t = title.lower()
-    return any(k in t for k in ROLE_KEYWORDS)
+    if any(k in t for k in ROLE_KEYWORDS):
+        match = re.search(r"software (engineering )?engineer[^a-z0-9]*intern", t)
+        if match:
+            segment = t[match.end():]
+            segment = segment.strip(" ,:-–—()[]")
+            if segment:
+                if any(k in segment for k in SPECIALIZATION_KEYWORDS):
+                    return True
+                if any(k in segment for k in SPECIALIZATION_ALLOWLIST_TERMS):
+                    return True
+                return False
+        return True
+    return False
 
 
 def _location_name(location):

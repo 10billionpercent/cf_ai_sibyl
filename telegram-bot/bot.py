@@ -267,92 +267,110 @@ async def jobs(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await msg.edit_text("🔎 Fetching internships...")
 
         async with httpx.AsyncClient(timeout=20000) as client:
-            response = await client.get(
-                "http://127.0.0.1:8000/fetch-jobs"
+            response = await client.post(
+                "http://127.0.0.1:8000/fetch-jobs-stream"
             )
 
         if response.status_code != 200:
             await msg.edit_text("❌ Failed to fetch internships")
             return
 
-        await msg.edit_text("🧠 Processing results...")
-
         data = response.json()
-
-        print("BOT RECIEVED ", data)
-
-        jobs = data.get("jobs", [])
-
-        if not isinstance(jobs, list):
+        run_id = data.get("run_id")
+        if not run_id:
             await msg.edit_text("❌ Backend error")
             return
-        
-        if not jobs:
-            await msg.edit_text(
-        "🧠 I analyzed all internships.\n\n"
-        "❌ No strong matches found.\n\n"
-        "I'll keep searching..."
-    )
-            return
 
-        await msg.edit_text(
-        f"🔥 Found {len(jobs)} strong matches!"
-        )
+        await msg.edit_text("🧠 Matching jobs... sending results as they are ready.")
 
         context.user_data["last_jobs"] = {}
 
-        for idx, job in enumerate(jobs, start=1):
-            match = job.get("match") or {}
-            score = match.get("match_score", "?")
+        seen = set()
+        cursor = 0
+        total = None
 
-            message = (
-                f"🔥 {score} MATCH — {job.get('title')}\n\n"
-                f"🏢 {match.get('company', 'Unknown')}\n"
-                f"🌐 {job.get('source')}\n\n"
-            )
-
-            # Why
-            if match.get("why"):
-                message += "🧠 Why:\n"
-                for item in match["why"]:
-                    message += f"• {item}\n"
-                message += "\n"
-
-            # Missing
-            if match.get("missing"):
-                message += "⚠️ Missing:\n"
-                for item in match["missing"]:
-                    message += f"• {item}\n"
-                message += "\n"
-
-            # Uncertainty
-            if match.get("uncertainty"):
-                message += "🤔 Uncertainty:\n"
-                for item in match["uncertainty"]:
-                    message += f"• {item}\n"
-                message += "\n"
-
-            message += f"🔗 Apply: {job.get('apply_url') or job.get('job_url') or job.get('url')}"
-
-            job_id = str(job.get("job_id") or job.get("id") or job.get("url"))
-            context.user_data["last_jobs"][job_id] = job
-
-            try:
-                await update.message.reply_text(
-                    message,
-                    reply_markup=feedback_keyboard(job_id)
+        while True:
+            async with httpx.AsyncClient(timeout=20000) as client:
+                result = await client.get(
+                    "http://127.0.0.1:8000/fetch-results",
+                    params={"run_id": run_id, "since": cursor}
                 )
-            except RetryAfter as e:
-                await asyncio.sleep(e.retry_after)
-                await update.message.reply_text(
-                    message,
-                    reply_markup=feedback_keyboard(job_id)
-                )
-            except Exception as e:
-                logger.error(f"Send failed ({idx}/{len(jobs)}): {e}")
-                continue
 
-            await asyncio.sleep(0.5)
+            if result.status_code != 200:
+                await msg.edit_text("❌ Failed to fetch internships")
+                return
+
+            payload = result.json()
+            status = payload.get("status")
+            total = payload.get("total") if total is None else total
+
+            new_jobs = payload.get("results", [])
+            cursor = payload.get("next", cursor)
+
+            for idx, job in enumerate(new_jobs, start=1):
+                match = job.get("match") or {}
+                score = match.get("match_score", "?")
+
+                message = (
+                    f"🔥 {score} MATCH — {job.get('title')}\n\n"
+                    f"🏢 {match.get('company', 'Unknown')}\n"
+                    f"🌐 {job.get('source')}\n\n"
+                )
+
+                # Why
+                if match.get("why"):
+                    message += "🧠 Why:\n"
+                    for item in match["why"]:
+                        message += f"• {item}\n"
+                    message += "\n"
+
+                # Missing
+                if match.get("missing"):
+                    message += "⚠️ Missing:\n"
+                    for item in match["missing"]:
+                        message += f"• {item}\n"
+                    message += "\n"
+
+                # Uncertainty
+                if match.get("uncertainty"):
+                    message += "🤔 Uncertainty:\n"
+                    for item in match["uncertainty"]:
+                        message += f"• {item}\n"
+                    message += "\n"
+
+                message += f"🔗 Apply: {job.get('apply_url') or job.get('job_url') or job.get('url')}"
+
+                job_id = str(job.get("job_id") or job.get("id") or job.get("url"))
+                context.user_data["last_jobs"][job_id] = job
+
+                if job_id in seen:
+                    continue
+                seen.add(job_id)
+
+                try:
+                    await update.message.reply_text(
+                        message,
+                        reply_markup=feedback_keyboard(job_id)
+                    )
+                except RetryAfter as e:
+                    await asyncio.sleep(e.retry_after)
+                    await update.message.reply_text(
+                        message,
+                        reply_markup=feedback_keyboard(job_id)
+                    )
+                except Exception as e:
+                    logger.error(f"Send failed: {e}")
+                    continue
+
+                await asyncio.sleep(0.5)
+
+            if status == "done":
+                break
+            if status == "error":
+                await msg.edit_text("⚠️ Something went wrong while matching")
+                break
+
+            await asyncio.sleep(5)
         
 
     except Exception as e:
