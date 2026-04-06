@@ -21,12 +21,6 @@ They are the core of the system’s decision-making behavior.
 
 ---
 
-###Job Matching Prompt
-
-(To be added)
-
----
-
 ###Resume Interpretation Prompt
 
 You are an AI resume parser.
@@ -54,7 +48,21 @@ Return JSON only.
 
 ---
 
-###Scoring & Reasoning Prompt
+###Resume Summarization Prompt
+
+Summarize this candidate profile for job matching.
+
+Return JSON:
+
+- role
+- skills (short list)
+- preferences
+- level
+
+Keep extremely concise.
+
+---
+###Job Matching Prompt
 
 (To be added)
 
