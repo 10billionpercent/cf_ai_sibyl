@@ -9,15 +9,34 @@ from db import db
 
 
 _INTERNSHIP_RE = re.compile(r"\bintern(ship)?s?\b", re.IGNORECASE)
+ROLE_KEYWORDS = [
+    "software engineer",
+    "software developer",
+    "swe",
+    "web developer",
+    "web development",
+    "full stack",
+    "full-stack",
+    "fullstack",
+    "frontend",
+    "frontend engineer",
+    "front-end"
+]
 HEADERS = {"User-Agent": "Sibyl Internship Agent"}
 RECENT_DAYS = 7
-MAX_COMPANIES = 10  # TEMP: only first 10 companies
 
 
 def _is_internship_title(title):
     if not title:
         return False
     return _INTERNSHIP_RE.search(title) is not None
+
+
+def _is_target_role(title):
+    if not title:
+        return False
+    t = title.lower()
+    return any(k in t for k in ROLE_KEYWORDS)
 
 
 def _pick_name(value):
@@ -72,10 +91,7 @@ def fetch_ashby_jobs():
 
     jobs = []
 
-    for i, company in enumerate(companies):
-        if i >= MAX_COMPANIES:
-            break
-
+    for company in companies:
         slug = (company.get("slug") or "").strip()
         if not slug:
             continue
@@ -101,6 +117,7 @@ def fetch_ashby_jobs():
         internship_jobs = [
             j for j in entries
             if _is_internship_title(j.get("title", ""))
+            and _is_target_role(j.get("title", ""))
             and _is_recent(j.get("publishedAt"))
         ]
 
