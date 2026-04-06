@@ -1,4 +1,4 @@
-#PROMPTS.md
+# PROMPTS.md
 
 This project was developed using AI-assisted coding. Prompts were used to accelerate implementation while maintaining full control over architecture, logic, and system design.
 
@@ -6,7 +6,7 @@ Below are condensed and structured versions of the prompts used.
 
 ---
 
-##1. Runtime LLM Prompts (Core Intelligence)
+## 1. Runtime LLM Prompts (Core Intelligence)
 
 This section contains the actual prompts used at runtime for AI-based job evaluation and reasoning.
 
@@ -21,7 +21,7 @@ They are the core of the system’s decision-making behavior.
 
 ---
 
-###Resume Interpretation Prompt
+### Resume Interpretation Prompt
 
 You are an AI resume parser.
 
@@ -48,7 +48,7 @@ Return JSON only.
 
 ---
 
-###Resume Summarization Prompt
+### Resume Summarization Prompt
 
 Summarize this candidate profile for job matching.
 
@@ -62,7 +62,7 @@ Return JSON:
 Keep extremely concise.
 
 ---
-###Job Matching Prompt
+### Job Matching Prompt
 
 You are an AI job matching assistant.
 
@@ -102,33 +102,33 @@ Return JSON only.
 
 ---
 
-##2. Development Prompts
+## 2. Development Prompts
 
-###Core System Design
+### Core System Design
 
 "Design an AI agent that autonomously discovers and evaluates internship opportunities. The system should include job fetching, filtering, scoring, explainability, logging, and user feedback integration."
 
 ---
 
-###Resume Parsing
+### Resume Parsing
 
 "Parse a resume PDF and extract structured data including role, skills, and technologies. Output clean JSON suitable for downstream matching."
 
 ---
 
-###Job Fetching (Ashby + Greenhouse)
+### Job Fetching (Asbhy and Greenhouse)
 
 "Create async Python functions using httpx to fetch job listings from Ashby and Greenhouse APIs. Normalize responses into a consistent structure. Handle failures gracefully and include request delays."
 
 ---
 
-###Internship Filtering
+### Internship Filtering
 
 "Filter job listings to include only internships using title-based keyword matching (intern, internship). Ensure case-insensitive filtering and avoid false positives."
 
 ---
 
-###Job Matching (LLM Core)
+### Job Matching (LLM Core)
 
 "Given a candidate profile and a job, evaluate relevance using an LLM. Return structured output:
 
@@ -142,7 +142,7 @@ Ensure explainability and avoid generic responses."
 
 ---
 
-###Decision Logic
+### Decision Logic
 
 "Convert LLM score into actionable categories:
 
@@ -154,7 +154,7 @@ Ensure decisions are consistent and interpretable."
 
 ---
 
-###Telegram Bot Messaging
+### Telegram Bot Messaging
 
 "Format job matches into clean Telegram messages with:
 
@@ -169,25 +169,25 @@ Messages should be concise, readable, and actionable."
 
 ---
 
-###Feedback System
+### Feedback System
 
 "Design a feedback mechanism using inline buttons (Good, Bad, Close, Ignore). Capture user feedback and store it for future analysis and system improvement."
 
 ---
 
-###MongoDB Integration
+### MongoDB Integration
 
 "Store structured job and resume data in MongoDB. Persist only meaningful data (e.g., user-approved jobs) to optimize storage and signal quality."
 
 ---
 
-###Cloudflare D1 Logging
+### Cloudflare D1 Logging
 
 "Design SQL schema to log all evaluated jobs and system events. Include score, reasoning, uncertainty, and timestamps. Ensure logs enable traceability and debugging."
 
 ---
 
-###Logging Integration
+### Logging Integration
 
 "Integrate logging into the pipeline without disrupting core logic. Log:
 
@@ -198,7 +198,7 @@ Ensure minimal overhead and clean structure."
 
 ---
 
-###System Architecture
+### System Architecture
 
 "Structure the system as a modular pipeline:
 
@@ -208,7 +208,7 @@ Ensure separation of concerns and scalability."
 
 ---
 
-###Explainability Principles
+### Explainability Principles
 
 "Ensure the AI system is not a black box. Every decision must include:
 
@@ -220,13 +220,13 @@ The system should assist, not replace, human decision-making."
 
 ---
 
-###AI Usage Philosophy
+### AI Usage Philosophy
 
 "Use AI as a reasoning layer, not just a generator. Prioritize clarity, structure, and usefulness over verbosity."
 
 ---
 
-###Additional Development Prompts (Condensed)
+### Additional Development Prompts (Condensed)
 
 - "Generate async job fetchers using httpx with retry and delay logic"
 - "Normalize API responses into a consistent job schema"
@@ -237,7 +237,7 @@ The system should assist, not replace, human decision-making."
 
 ---
 
-##Final Note
+## Final Note
 
 This system was built iteratively using AI-assisted development, with a focus on:
 
