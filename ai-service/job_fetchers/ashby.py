@@ -91,12 +91,13 @@ def fetch_ashby_jobs():
 
     jobs = []
 
-    for company in companies:
+    total = len(companies)
+    for i, company in enumerate(companies, start=1):
         slug = (company.get("slug") or "").strip()
         if not slug:
             continue
 
-        print(f"Fetching {slug}...")
+        print(f"Fetching {i}/{total} {slug}...")
         url = f"https://api.ashbyhq.com/posting-api/job-board/{slug}"
 
         try:

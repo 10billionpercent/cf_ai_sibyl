@@ -2,6 +2,8 @@ import os
 import httpx
 import json
 import numpy as np
+import asyncio
+import re
 
 from pathlib import Path
 from dotenv import load_dotenv
@@ -82,7 +84,25 @@ def similarity(a, b):
 # 70B EXPLAIN MATCH (GROQ)
 # -----------------------
 
-async def call_llm(job, resume):
+def _parse_retry_seconds(message):
+    if not message:
+        return None
+    match = re.search(r"try again in ([0-9.]+)s", message)
+    if match:
+        try:
+            return float(match.group(1))
+        except Exception:
+            return None
+    match = re.search(r"try again in ([0-9.]+)ms", message)
+    if match:
+        try:
+            return float(match.group(1)) / 1000.0
+        except Exception:
+            return None
+    return None
+
+
+async def call_llm(job, resume, max_retries=6, retry_delay=5):
     prompt = PROMPT_PATH.read_text()
 
     safe_job = make_json_safe(job)
@@ -105,32 +125,43 @@ Job Posting:
     url = "https://api.groq.com/openai/v1/chat/completions"
 
     async with httpx.AsyncClient(timeout=60) as client:
+        for attempt in range(1, max_retries + 1):
+            response = await client.post(
+                url,
+                headers={
+                    "Authorization": f"Bearer {GROQ_API_TOKEN}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "llama-3.3-70b-versatile",
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": "You are a job matcher. Return JSON only."
+                        },
+                        {
+                            "role": "user",
+                            "content": full_prompt
+                        }
+                    ],
+                    "temperature": 0
+                }
+            )
 
-        response = await client.post(
-            url,
-            headers={
-                "Authorization": f"Bearer {GROQ_API_TOKEN}",
-                "Content-Type": "application/json"
-            },
-            json={
-                "model": "llama-3.3-70b-versatile",
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": "You are a job matcher. Return JSON only."
-                    },
-                    {
-                        "role": "user",
-                        "content": full_prompt
-                    }
-                ],
-                "temperature": 0
-            }
-        )
+            result = response.json()
 
-    result = response.json()
+            if result.get("error", {}).get("code") == "rate_limit_exceeded":
+                message = result.get("error", {}).get("message", "")
+                wait_seconds = _parse_retry_seconds(message) or retry_delay
+                wait_seconds = max(wait_seconds, 2)
+                print(f"Groq rate limited, retrying in {wait_seconds:.2f}s (attempt {attempt}/{max_retries})")
+                await asyncio.sleep(wait_seconds)
+                continue
 
-    print("Groq response:", result)
+            print("Groq response:", result)
+            break
+        else:
+            raise RuntimeError("Groq rate limit exceeded after retries")
 
     content = result["choices"][0]["message"]["content"]
 
@@ -182,24 +213,23 @@ URL: {job.get("url")}
         except Exception as e:
             print("Embedding failed:", e)
 
-    # sort top jobs
+    # sort all jobs by similarity
     scored.sort(key=lambda x: x[0], reverse=True)
 
-    top_jobs = [job for score, job in scored[:5]]
+    all_jobs = [job for score, job in scored]
 
-    print(f"Top {len(top_jobs)} selected")
+    print(f"Total jobs to explain: {len(all_jobs)}")
 
-    # expensive explain only top jobs
-    for job in top_jobs:
+    # explain every job
+    for job in all_jobs:
 
         try:
 
+            await asyncio.sleep(1.5)
             result = await call_llm(job, resume)
 
-            if result.get("match_score", 0) >= 6:
-
-                job["match"] = result
-                matched.append(job)
+            job["match"] = result
+            matched.append(job)
 
         except Exception as e:
             print("Match failed:", e)

@@ -4,7 +4,7 @@ import httpx
 import time
 import hashlib
 
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Body
 
 from resume_parser import parse_resume
 from job_fetcher import fetch_all_jobs
@@ -72,20 +72,26 @@ async def insert_event_log(
     await execute_query(sql, [event_type, source, company, status, message])
 
 
-async def insert_job_log(job, match_result):
-    def _norm(value):
-        if value is None:
-            return ""
-        return str(value).strip().lower()
+def _norm(value):
+    if value is None:
+        return ""
+    return str(value).strip().lower()
 
-    def _s(value):
-        if value is None:
-            return ""
-        return str(value)
 
-    job_id = hashlib.sha256(
+def _s(value):
+    if value is None:
+        return ""
+    return str(value)
+
+
+def compute_job_id(job):
+    return hashlib.sha256(
         f"{_norm(job.get('source'))}|{_norm(job.get('company'))}|{_norm(job.get('title'))}|{_norm(job.get('location'))}|{_norm(job.get('apply_url'))}|{_norm(job.get('job_url'))}".encode("utf-8")
     ).hexdigest()
+
+
+async def insert_job_log(job, match_result):
+    job_id = compute_job_id(job)
 
     score = match_result.get("score")
     if score is None:
@@ -204,14 +210,6 @@ async def fetch_jobs():
         for job in jobs:
             job["created_at"] = datetime.now(timezone.utc)
 
-        # store in mongodb
-        if jobs:
-            inserted = jobs_collection.insert_many(jobs)
-
-            # still convert _id for API response
-            for job, _id in zip(jobs, inserted.inserted_ids):
-                job["_id"] = str(_id)
-
         # match jobs
         match_start = time.perf_counter()
         matched = await match_jobs(resume, jobs)
@@ -247,3 +245,63 @@ async def fetch_jobs():
             message=str(e)
         )
         return {"error": "System error"}
+
+
+# -----------------------
+# SAVE JOB (GOOD FEEDBACK)
+# -----------------------
+
+@app.post("/save-job")
+async def save_job(job: dict = Body(...)):
+
+    def _pick_filter(data):
+        if data.get("job_id"):
+            return {"job_id": data.get("job_id")}
+        if data.get("job_url"):
+            return {"job_url": data.get("job_url")}
+        if data.get("apply_url"):
+            return {"apply_url": data.get("apply_url")}
+        return {
+            "company": data.get("company"),
+            "title": data.get("title"),
+            "location": data.get("location")
+        }
+
+    now = datetime.now(timezone.utc)
+    job["saved_from_feedback"] = True
+    job["saved_at"] = now
+
+    result = jobs_collection.update_one(
+        _pick_filter(job),
+        {
+            "$set": job,
+            "$setOnInsert": {"created_at": now}
+        },
+        upsert=True
+    )
+
+    return {"status": "ok", "updated": result.modified_count, "upserted": bool(result.upserted_id)}
+
+
+# -----------------------
+# SAVE FEEDBACK (GOOD/BAD)
+# -----------------------
+
+@app.post("/job-feedback")
+async def job_feedback(payload: dict = Body(...)):
+    job = payload.get("job") or {}
+    feedback = payload.get("feedback")
+
+    if not job or not feedback:
+        return {"error": "Missing job or feedback"}
+
+    job_id = compute_job_id(job)
+
+    sql = """
+    UPDATE job_logs
+    SET user_feedback = ?, last_seen_at = CURRENT_TIMESTAMP
+    WHERE job_id = ?
+    """
+    await execute_query(sql, [feedback, job_id])
+
+    return {"status": "ok"}

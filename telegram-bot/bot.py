@@ -1,6 +1,7 @@
 import os
 import logging
 import httpx
+import asyncio
 from dotenv import load_dotenv
 import io
 
@@ -9,6 +10,7 @@ from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup
 )
+from telegram.error import RetryAfter
 
 from telegram.ext import (
     ApplicationBuilder,
@@ -110,9 +112,34 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    action, job_id = query.data.split("|")
+    if "|" in query.data:
+        action, job_id = query.data.split("|", 1)
+    else:
+        action, job_id = query.data, None
 
     logger.info(f"Feedback: {action} | Job: {job_id}")
+
+    if action in ("good", "more", "less", "bad") and job_id:
+        job_cache = context.user_data.get("last_jobs", {})
+        job = job_cache.get(job_id)
+        if job:
+            try:
+                async with httpx.AsyncClient(timeout=60) as client:
+                    if action in ("good", "more"):
+                        await client.post(
+                            "http://127.0.0.1:8000/save-job",
+                            json=job
+                        )
+
+                    await client.post(
+                        "http://127.0.0.1:8000/job-feedback",
+                        json={
+                            "job": job,
+                            "feedback": "good" if action in ("good", "more") else "bad"
+                        }
+                    )
+            except Exception as e:
+                logger.error(f"Save job failed: {e}")
 
     if action == "more":
         text = "👍 Got it — I'll show more like this"
@@ -237,13 +264,16 @@ async def jobs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     try:
-        await msg.edit_text("🔎 Fetching HackerNews...")
+        await msg.edit_text("🔎 Fetching internships...")
 
         async with httpx.AsyncClient(timeout=20000) as client:
-
             response = await client.get(
                 "http://127.0.0.1:8000/fetch-jobs"
             )
+
+        if response.status_code != 200:
+            await msg.edit_text("❌ Failed to fetch internships")
+            return
 
         await msg.edit_text("🧠 Processing results...")
 
@@ -269,7 +299,9 @@ async def jobs(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🔥 Found {len(jobs)} strong matches!"
         )
 
-        for job in jobs:
+        context.user_data["last_jobs"] = {}
+
+        for idx, job in enumerate(jobs, start=1):
             match = job.get("match") or {}
             score = match.get("match_score", "?")
 
@@ -300,14 +332,27 @@ async def jobs(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     message += f"• {item}\n"
                 message += "\n"
 
-            message += f"🔗 Apply: {job.get('url')}"
+            message += f"🔗 Apply: {job.get('apply_url') or job.get('job_url') or job.get('url')}"
 
-            job_id = job.get("_id", job.get("url"))
+            job_id = str(job.get("job_id") or job.get("id") or job.get("url"))
+            context.user_data["last_jobs"][job_id] = job
 
-            await update.message.reply_text(
-                message,
-                reply_markup=feedback_keyboard(job_id)
-            )
+            try:
+                await update.message.reply_text(
+                    message,
+                    reply_markup=feedback_keyboard(job_id)
+                )
+            except RetryAfter as e:
+                await asyncio.sleep(e.retry_after)
+                await update.message.reply_text(
+                    message,
+                    reply_markup=feedback_keyboard(job_id)
+                )
+            except Exception as e:
+                logger.error(f"Send failed ({idx}/{len(jobs)}): {e}")
+                continue
+
+            await asyncio.sleep(0.5)
         
 
     except Exception as e:
@@ -315,7 +360,7 @@ async def jobs(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.exception("Jobs command crashed")
 
         await msg.edit_text(
-            "❌ Failed to fetch internships"
+            "⚠️ Something went wrong while sending results"
         )
 
 # ----------------------
