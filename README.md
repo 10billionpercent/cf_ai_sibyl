@@ -81,7 +81,7 @@ Descriptions:
 - `CLOUDFLARE_DATABASE_ID`: D1 database ID.
 - `CLOUDFLARE_API_TOKEN`: Cloudflare API token with D1 + Workers AI permissions.
 - `MONGODB_URI`: MongoDB connection string (used for resumes + saved jobs).
-- `GROQ_API_KEY`: Groq API key for Llama 3.3 70B matching.
+- `GROQ_API_KEY`: Groq API key for Llama 3.1 8B matching (default).
 
 ---
 
@@ -280,11 +280,13 @@ FastAPI endpoints:
 
 # Rate Limits and LLM Throughput
 
-Matching uses Groq Llama 3.3 70B. The pipeline includes:
-- Automatic retry on rate-limit.
-- A small delay between calls.
+Matching uses Groq Llama 3.1 8B by default for all jobs. You can optionally enable a slower model (e.g., 70B) for the top-N matches via `GROQ_SLOW_TOP_N`.
 
-If you see rate-limit logs, wait a few minutes and retry.
+The pipeline includes:
+- Automatic retry on rate-limit.
+- Configurable delays between calls.
+
+If you see rate-limit logs, wait a few minutes and retry or lower `GROQ_SLOW_TOP_N`.
 
 ---
 
