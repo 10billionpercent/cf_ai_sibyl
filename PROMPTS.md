@@ -29,23 +29,32 @@ They are the core of the system’s decision-making behavior.
 
 ###Resume Interpretation Prompt
 
-(To be added)
+You are an AI resume parser.
+
+Extract structured information from the resume.
+
+Return JSON only.
+
+Fields:
+
+- role
+- skills
+- experience_level
+- preferences
+- technologies
+
+Instructions:
+
+- Infer preferences based on skills, projects, and technologies
+- Preferences should represent what kind of roles the candidate is likely interested in
+- Do not hallucinate unrelated fields
+- If unsure, make reasonable inference based on evidence in resume
+
+Return JSON only.
 
 ---
 
 ###Scoring & Reasoning Prompt
-
-(To be added)
-
----
-
-###Output Formatting Prompt
-
-(To be added)
-
----
-
-###Uncertainty Handling Prompt
 
 (To be added)
 
