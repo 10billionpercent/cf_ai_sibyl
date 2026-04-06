@@ -116,7 +116,7 @@ Return JSON only.
 
 ---
 
-### Job Fetching (Asbhy and Greenhouse)
+### Job Fetching (Company Career Pages)
 
 "Create async Python functions using httpx to fetch job listings from Ashby and Greenhouse APIs. Normalize responses into a consistent structure. Handle failures gracefully and include request delays."
 
