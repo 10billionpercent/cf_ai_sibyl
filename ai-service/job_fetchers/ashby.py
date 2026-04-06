@@ -1,0 +1,144 @@
+# C:\Users\shrey\Desktop\sibyl\ai-service\job_fetchers\ashby.py
+import random
+import time
+import re
+import requests
+from datetime import datetime, timezone, timedelta
+
+from db import db
+
+
+_INTERNSHIP_RE = re.compile(r"\bintern(ship)?s?\b", re.IGNORECASE)
+HEADERS = {"User-Agent": "Sibyl Internship Agent"}
+RECENT_DAYS = 7
+MAX_COMPANIES = 10  # TEMP: only first 10 companies
+
+
+def _is_internship_title(title):
+    if not title:
+        return False
+    return _INTERNSHIP_RE.search(title) is not None
+
+
+def _pick_name(value):
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, dict):
+        for key in ("name", "label", "title", "value"):
+            v = value.get(key)
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+    return str(value).strip()
+
+
+def _location_name(value):
+    if isinstance(value, dict):
+        for key in ("name", "location", "city"):
+            v = value.get(key)
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+    if isinstance(value, str):
+        return value.strip()
+    return ""
+
+
+def _parse_dt(value):
+    if not value or not isinstance(value, str):
+        return None
+    s = value.strip()
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    try:
+        return datetime.fromisoformat(s)
+    except Exception:
+        return None
+
+
+def _is_recent(value):
+    dt = _parse_dt(value)
+    if not dt:
+        return False
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=RECENT_DAYS)
+    return dt >= cutoff
+
+
+def fetch_ashby_jobs():
+    companies_collection = db["companies"]
+    companies = list(companies_collection.find({"source": "ashby"}))
+
+    jobs = []
+
+    for i, company in enumerate(companies):
+        if i >= MAX_COMPANIES:
+            break
+
+        slug = (company.get("slug") or "").strip()
+        if not slug:
+            continue
+
+        print(f"Fetching {slug}...")
+        url = f"https://api.ashbyhq.com/posting-api/job-board/{slug}"
+
+        try:
+            response = requests.get(url, headers=HEADERS, timeout=15)
+            if response.status_code != 200:
+                time.sleep(random.uniform(0.5, 1.0))
+                continue
+            data = response.json()
+        except Exception:
+            time.sleep(random.uniform(0.5, 1.0))
+            continue
+
+        entries = data.get("jobs", [])
+        if not isinstance(entries, list):
+            time.sleep(random.uniform(0.5, 1.0))
+            continue
+
+        internship_jobs = [
+            j for j in entries
+            if _is_internship_title(j.get("title", ""))
+            and _is_recent(j.get("publishedAt"))
+        ]
+
+        print(f"Found {len(internship_jobs)} internships")
+        if not internship_jobs:
+            time.sleep(random.uniform(0.5, 1.0))
+            continue
+
+        for job in internship_jobs:
+            title = (job.get("title") or "").strip()
+            location = _location_name(job.get("location"))
+            is_remote = job.get("isRemote")
+            if is_remote is None:
+                is_remote = "remote" in location.lower()
+
+            apply_url = (job.get("applyUrl") or job.get("jobUrl") or "").strip()
+            job_url = (job.get("jobUrl") or job.get("applyUrl") or "").strip()
+
+            normalized = {
+                "job_id": str(job.get("id", "")),
+                "title": title,
+                "company": slug,
+                "source": "ashby",
+                "location": location,
+                "is_remote": bool(is_remote),
+                "employment_type": _pick_name(job.get("employmentType")) or None,
+                "department": _pick_name(job.get("department")) or None,
+                "team": _pick_name(job.get("team")) or None,
+                "apply_url": apply_url,
+                "job_url": job_url,
+                "url": job_url or apply_url,
+                "description": (job.get("descriptionHtml") or "").strip(),
+                "posted_at": job.get("publishedAt") or None,
+            }
+
+            if normalized["job_id"] and normalized["apply_url"]:
+                jobs.append(normalized)
+
+        time.sleep(random.uniform(0.5, 1.0))
+
+    return jobs

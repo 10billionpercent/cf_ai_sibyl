@@ -239,7 +239,7 @@ async def jobs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await msg.edit_text("🔎 Fetching HackerNews...")
 
-        async with httpx.AsyncClient(timeout=180) as client:
+        async with httpx.AsyncClient(timeout=20000) as client:
 
             response = await client.get(
                 "http://127.0.0.1:8000/fetch-jobs"

@@ -82,14 +82,20 @@ def similarity(a, b):
 # 70B EXPLAIN MATCH (GROQ)
 # -----------------------
 
-async def call_llm(job):
-
+async def call_llm(job, resume):
     prompt = PROMPT_PATH.read_text()
 
     safe_job = make_json_safe(job)
 
+    # Strip embedding to keep prompt clean
+    resume_safe = make_json_safe({k: v for k, v in resume.items() if k != "embedding"})
+
     full_prompt = f"""
 {prompt}
+
+Candidate Profile:
+
+{json.dumps(resume_safe, indent=2)}
 
 Job Posting:
 
@@ -153,8 +159,10 @@ async def match_jobs(resume, jobs):
 
     scored = []
 
+    total = len(jobs)
+
     # cheap similarity
-    for job in jobs:
+    for idx, job in enumerate(jobs, start=1):
 
         job_text = f"""
 Title: {job.get("title")}
@@ -164,6 +172,7 @@ URL: {job.get("url")}
 
         try:
 
+            print(f"Embedding {idx}/{total} ... {job.get('company', 'Unknown')} | {job.get('title', 'Untitled')}")
             job_embedding = await get_embedding(job_text)
 
             score = similarity(resume_embedding, job_embedding)
@@ -185,7 +194,7 @@ URL: {job.get("url")}
 
         try:
 
-            result = await call_llm(job)
+            result = await call_llm(job, resume)
 
             if result.get("match_score", 0) >= 6:
 

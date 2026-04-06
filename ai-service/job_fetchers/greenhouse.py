@@ -1,0 +1,128 @@
+# C:\Users\shrey\Desktop\sibyl\ai-service\job_fetchers\greenhouse.py
+import random
+import time
+import re
+import requests
+from datetime import datetime, timezone, timedelta
+
+from db import db
+
+
+_INTERNSHIP_RE = re.compile(r"\bintern(ship)?s?\b", re.IGNORECASE)
+HEADERS = {"User-Agent": "Sibyl Internship Agent"}
+RECENT_DAYS = 7
+MAX_COMPANIES = 10  # TEMP: only first 10 companies
+
+
+def _is_internship_title(title):
+    if not title:
+        return False
+    return _INTERNSHIP_RE.search(title) is not None
+
+
+def _location_name(location):
+    if isinstance(location, dict):
+        name = location.get("name")
+        if isinstance(name, str):
+            return name.strip()
+    if isinstance(location, str):
+        return location.strip()
+    return ""
+
+
+def _parse_dt(value):
+    if not value or not isinstance(value, str):
+        return None
+    s = value.strip()
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    try:
+        return datetime.fromisoformat(s)
+    except Exception:
+        return None
+
+
+def _is_recent(value):
+    dt = _parse_dt(value)
+    if not dt:
+        return False
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=RECENT_DAYS)
+    return dt >= cutoff
+
+
+def fetch_greenhouse_jobs():
+    companies_collection = db["companies"]
+    companies = list(companies_collection.find({"source": "greenhouse"}))
+
+    jobs = []
+
+    for i, company in enumerate(companies):
+        if i >= MAX_COMPANIES:
+            break
+
+        slug = (company.get("slug") or "").strip()
+        if not slug:
+            continue
+
+        print(f"Fetching {slug}...")
+        url = f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs"
+
+        try:
+            response = requests.get(url, headers=HEADERS, timeout=15)
+            if response.status_code != 200:
+                time.sleep(random.uniform(0.5, 1.0))
+                continue
+            data = response.json()
+        except Exception:
+            time.sleep(random.uniform(0.5, 1.0))
+            continue
+
+        entries = data.get("jobs", [])
+        if not isinstance(entries, list):
+            time.sleep(random.uniform(0.5, 1.0))
+            continue
+
+        internship_jobs = [
+            j for j in entries
+            if _is_internship_title(j.get("title", ""))
+            and _is_recent(j.get("updated_at") or j.get("created_at"))
+        ]
+
+        print(f"Found {len(internship_jobs)} internships")
+        if not internship_jobs:
+            time.sleep(random.uniform(0.5, 1.0))
+            continue
+
+        for job in internship_jobs:
+            title = (job.get("title") or "").strip()
+            location = _location_name(job.get("location"))
+            apply_url = (job.get("absolute_url") or "").strip()
+            posted_at = job.get("updated_at") or job.get("created_at") or None
+
+            normalized = {
+                "job_id": str(job.get("id", "")),
+                "title": title,
+                "company": slug,
+                "source": "greenhouse",
+                "location": location,
+                "is_remote": "remote" in location.lower(),
+                "employment_type": None,
+                "department": None,
+                "team": None,
+                "apply_url": apply_url,
+                "job_url": apply_url,
+                "url": apply_url,
+                "description": (job.get("content") or "").strip()
+                if isinstance(job.get("content"), str)
+                else "",
+                "posted_at": posted_at,
+            }
+
+            if normalized["job_id"] and normalized["apply_url"]:
+                jobs.append(normalized)
+
+        time.sleep(random.uniform(0.5, 1.0))
+
+    return jobs
