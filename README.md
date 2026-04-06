@@ -335,4 +335,3 @@ MIT
 # Author
 
 Built by [Shreya V](https://www.linkedin.com/in/shreya-v3012)
-AI-native internship discovery system
