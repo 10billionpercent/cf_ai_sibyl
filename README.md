@@ -320,9 +320,9 @@ Common issues and fixes:
 
 ---
 
-# Screenshots / Outputs
+# Screenshots
 
-(add images here)
+(will add images here)
 
 ---
 
@@ -334,5 +334,5 @@ MIT
 
 # Author
 
-Built by Shreya
+Built by [Shreya] (https://www.linkedin.com/in/shreya-v3012)
 AI-native internship discovery system
