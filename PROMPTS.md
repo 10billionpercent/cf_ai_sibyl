@@ -1,4 +1,4 @@
-#PROMPTS.md
+# PROMPTS.md
 
 This project was developed using AI-assisted coding. Prompts were used to accelerate implementation while maintaining full control over architecture, logic, and system design.
 
@@ -6,7 +6,7 @@ Below are condensed and structured versions of the prompts used.
 
 ---
 
-##1. Runtime LLM Prompts (Core Intelligence)
+## 1. Runtime LLM Prompts (Core Intelligence)
 
 This section contains the actual prompts used at runtime for AI-based job evaluation and reasoning.
 
@@ -21,63 +21,114 @@ They are the core of the system’s decision-making behavior.
 
 ---
 
-###Job Matching Prompt
+### Resume Interpretation Prompt
 
-(To be added)
+You are an AI resume parser.
 
----
+Extract structured information from the resume.
 
-###Resume Interpretation Prompt
+Return JSON only.
 
-(To be added)
+Fields:
 
----
+- role
+- skills
+- experience_level
+- preferences
+- technologies
 
-###Scoring & Reasoning Prompt
+Instructions:
 
-(To be added)
+- Infer preferences based on skills, projects, and technologies
+- Preferences should represent what kind of roles the candidate is likely interested in
+- Do not hallucinate unrelated fields
+- If unsure, make reasonable inference based on evidence in resume
 
----
-
-###Output Formatting Prompt
-
-(To be added)
-
----
-
-###Uncertainty Handling Prompt
-
-(To be added)
+Return JSON only.
 
 ---
 
-##2. Development Prompts
+### Resume Summarization Prompt
 
-###Core System Design
+Summarize this candidate profile for job matching.
+
+Return JSON:
+
+- role
+- skills (short list)
+- preferences
+- level
+
+Keep extremely concise.
+
+---
+### Job Matching Prompt
+
+You are an AI job matching assistant.
+
+You are given:
+
+1. A candidate profile (parsed resume)
+2. A job posting
+
+Your task:
+
+1. Determine if this is a REAL internship
+2. Determine how well it matches the candidate
+3. Explain WHY
+
+Return JSON only.
+
+Fields:
+
+- is_real_internship (true/false)
+- match_score (0-10)
+- role
+- company
+- why (list)
+- missing (list)
+- uncertainty (list)
+- remote (true/false/null)
+
+Instructions:
+
+- Be conservative
+- Ignore GitHub PRs, blog posts, or fake internships
+- Only mark real internships as true
+- Explain reasoning clearly
+- Do not hallucinate
+
+Return JSON only.
+
+---
+
+## 2. Development Prompts
+
+### Core System Design
 
 "Design an AI agent that autonomously discovers and evaluates internship opportunities. The system should include job fetching, filtering, scoring, explainability, logging, and user feedback integration."
 
 ---
 
-###Resume Parsing
+### Resume Parsing
 
 "Parse a resume PDF and extract structured data including role, skills, and technologies. Output clean JSON suitable for downstream matching."
 
 ---
 
-###Job Fetching (Ashby + Greenhouse)
+### Job Fetching (Company Career Pages)
 
 "Create async Python functions using httpx to fetch job listings from Ashby and Greenhouse APIs. Normalize responses into a consistent structure. Handle failures gracefully and include request delays."
 
 ---
 
-###Internship Filtering
+### Internship Filtering
 
 "Filter job listings to include only internships using title-based keyword matching (intern, internship). Ensure case-insensitive filtering and avoid false positives."
 
 ---
 
-###Job Matching (LLM Core)
+### Job Matching (LLM Core)
 
 "Given a candidate profile and a job, evaluate relevance using an LLM. Return structured output:
 
@@ -91,7 +142,7 @@ Ensure explainability and avoid generic responses."
 
 ---
 
-###Decision Logic
+### Decision Logic
 
 "Convert LLM score into actionable categories:
 
@@ -103,7 +154,7 @@ Ensure decisions are consistent and interpretable."
 
 ---
 
-###Telegram Bot Messaging
+### Telegram Bot Messaging
 
 "Format job matches into clean Telegram messages with:
 
@@ -118,25 +169,25 @@ Messages should be concise, readable, and actionable."
 
 ---
 
-###Feedback System
+### Feedback System
 
 "Design a feedback mechanism using inline buttons (Good, Bad, Close, Ignore). Capture user feedback and store it for future analysis and system improvement."
 
 ---
 
-###MongoDB Integration
+### MongoDB Integration
 
 "Store structured job and resume data in MongoDB. Persist only meaningful data (e.g., user-approved jobs) to optimize storage and signal quality."
 
 ---
 
-###Cloudflare D1 Logging
+### Cloudflare D1 Logging
 
 "Design SQL schema to log all evaluated jobs and system events. Include score, reasoning, uncertainty, and timestamps. Ensure logs enable traceability and debugging."
 
 ---
 
-###Logging Integration
+### Logging Integration
 
 "Integrate logging into the pipeline without disrupting core logic. Log:
 
@@ -147,7 +198,7 @@ Ensure minimal overhead and clean structure."
 
 ---
 
-###System Architecture
+### System Architecture
 
 "Structure the system as a modular pipeline:
 
@@ -157,7 +208,7 @@ Ensure separation of concerns and scalability."
 
 ---
 
-###Explainability Principles
+### Explainability Principles
 
 "Ensure the AI system is not a black box. Every decision must include:
 
@@ -169,13 +220,13 @@ The system should assist, not replace, human decision-making."
 
 ---
 
-###AI Usage Philosophy
+### AI Usage Philosophy
 
 "Use AI as a reasoning layer, not just a generator. Prioritize clarity, structure, and usefulness over verbosity."
 
 ---
 
-###Additional Development Prompts (Condensed)
+### Additional Development Prompts (Condensed)
 
 - "Generate async job fetchers using httpx with retry and delay logic"
 - "Normalize API responses into a consistent job schema"
@@ -186,7 +237,7 @@ The system should assist, not replace, human decision-making."
 
 ---
 
-##Final Note
+## Final Note
 
 This system was built iteratively using AI-assisted development, with a focus on:
 
