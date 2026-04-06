@@ -102,7 +102,7 @@ def _parse_retry_seconds(message):
     return None
 
 
-async def call_llm(job, resume, max_retries=6, retry_delay=5):
+async def call_llm(job, resume, max_retries=6, retry_delay=8):
     prompt = PROMPT_PATH.read_text()
 
     safe_job = make_json_safe(job)
@@ -221,15 +221,20 @@ URL: {job.get("url")}
     print(f"Total jobs to explain: {len(all_jobs)}")
 
     # explain every job
-    for job in all_jobs:
+    BATCH_SIZE = 8
+
+    for i, job in enumerate(all_jobs, start=1):
 
         try:
 
-            await asyncio.sleep(1.5)
+            await asyncio.sleep(8)
             result = await call_llm(job, resume)
 
             job["match"] = result
             matched.append(job)
+
+            if i % BATCH_SIZE == 0:
+                await asyncio.sleep(30)
 
         except Exception as e:
             print("Match failed:", e)

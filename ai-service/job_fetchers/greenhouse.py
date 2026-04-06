@@ -3,6 +3,8 @@ import random
 import time
 import re
 import requests
+import json
+from pathlib import Path
 from datetime import datetime, timezone, timedelta
 
 from db import db
@@ -72,8 +74,7 @@ def _is_recent(value):
 
 
 def fetch_greenhouse_jobs():
-    companies_collection = db["companies"]
-    companies = list(companies_collection.find({"source": "greenhouse"}))
+    companies = _load_companies("greenhouse")
 
     jobs = []
 
@@ -144,3 +145,24 @@ def fetch_greenhouse_jobs():
         time.sleep(random.uniform(0.5, 1.0))
 
     return jobs
+
+
+def _load_companies(source):
+    try:
+        companies_collection = db["companies"]
+        companies = list(companies_collection.find({"source": source}))
+        if companies:
+            return companies
+    except Exception:
+        pass
+
+    # fallback to companies.json
+    for path in [Path("companies.json"), Path("..") / "companies.json"]:
+        if path.exists():
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                return [c for c in data if c.get("source") == source]
+            except Exception:
+                continue
+
+    return []
