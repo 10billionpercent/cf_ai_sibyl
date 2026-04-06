@@ -26,7 +26,7 @@ Sibyl:
 # System Overview
 
 ```mermaid
-flowchart LR
+flowchart TD
   A["Company Career Pages"] --> B["Fetch + Normalize"]
   B --> C["Resume Parsing"]
   C --> D["Embedding (Workers AI)"]
@@ -334,5 +334,5 @@ MIT
 
 # Author
 
-Built by [Shreya] (https://www.linkedin.com/in/shreya-v3012)
+Built by [Shreya V](https://www.linkedin.com/in/shreya-v3012)
 AI-native internship discovery system
