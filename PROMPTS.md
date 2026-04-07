@@ -48,20 +48,6 @@ Return JSON only.
 
 ---
 
-### Resume Summarization Prompt
-
-Summarize this candidate profile for job matching.
-
-Return JSON:
-
-- role
-- skills (short list)
-- preferences
-- level
-
-Keep extremely concise.
-
----
 ### Job Matching Prompt
 
 You are an AI job matching assistant.

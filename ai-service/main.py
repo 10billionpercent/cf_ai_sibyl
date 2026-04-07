@@ -36,6 +36,40 @@ D1_ENDPOINT = (
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RESUMES_JSON_PATHS = [REPO_ROOT / "resumes.json"]
 JOBS_JSON_PATHS = [REPO_ROOT / "jobs.json"]
+LOGS_DIR = REPO_ROOT / "logs"
+EVENTS_LOG_PATH = LOGS_DIR / "events.log"
+JOBS_LOG_PATH = LOGS_DIR / "jobs.log"
+
+
+def _d1_configured():
+    return bool(CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_DATABASE_ID and CLOUDFLARE_API_TOKEN)
+
+
+def _ensure_logs_dir():
+    os.makedirs(LOGS_DIR, exist_ok=True)
+
+
+def _log_event_fallback(event_type, source, status, message):
+    _ensure_logs_dir()
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    line = f"[{timestamp}] | {event_type} | {source or ''} | {status} | {message}\n"
+    with open(EVENTS_LOG_PATH, "a", encoding="utf-8") as f:
+        f.write(line)
+
+
+def _log_job_fallback(job, match_result, decision):
+    _ensure_logs_dir()
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    score = match_result.get("score")
+    if score is None:
+        score = match_result.get("match_score", 0)
+    try:
+        score_val = float(score)
+    except Exception:
+        score_val = 0
+    line = f"[{timestamp}] | {_s(job.get('company'))} | {_s(job.get('title'))} | {score_val} | {decision.upper()} | {_s(job.get('source'))}\n"
+    with open(JOBS_LOG_PATH, "a", encoding="utf-8") as f:
+        f.write(line)
 
 
 def _load_resumes_json():
@@ -116,11 +150,16 @@ async def insert_event_log(
     status="success",
     message=""
 ):
+    if not _d1_configured():
+        _log_event_fallback(event_type, source, status, message)
+        return
     sql = """
-    INSERT INTO event_logs (event_type, source, company, status, message, created_at)
-    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    INSERT INTO event_logs (event_type, source, status, message, created_at)
+    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
     """
-    await execute_query(sql, [event_type, source, company, status, message])
+    result = await execute_query(sql, [event_type, source, company, status, message])
+    if not result.get("success"):
+        _log_event_fallback(event_type, source, status, message)
 
 
 def _norm(value):
@@ -197,7 +236,13 @@ async def insert_job_log(job, match_result):
         _s(job.get("job_url"))
     ]
 
-    await execute_query(sql, params)
+    if not _d1_configured():
+        _log_job_fallback(job, match_result, decision)
+        return
+
+    result = await execute_query(sql, params)
+    if not result.get("success"):
+        _log_job_fallback(job, match_result, decision)
 
 
 # -----------------------
@@ -352,6 +397,8 @@ async def fetch_jobs_stream():
     async def on_result(job):
         RUNS[run_id]["results"].append(job)
         RUNS[run_id]["completed"] += 1
+        match_result = job.get("match", {})
+        await insert_job_log(job, match_result)
 
     async def runner():
         try:
@@ -395,10 +442,6 @@ async def fetch_jobs_stream():
                 status="success",
                 message=f"Matched {RUNS[run_id]['completed']} jobs in {match_seconds:.2f}s"
             )
-
-            for job in RUNS[run_id]["results"]:
-                match_result = job.get("match", {})
-                await insert_job_log(job, match_result)
 
             total_seconds = time.perf_counter() - fetch_start
             await insert_event_log(

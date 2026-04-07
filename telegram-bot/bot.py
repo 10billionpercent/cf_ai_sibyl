@@ -280,7 +280,7 @@ async def jobs(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 score = match.get("match_score", "?")
 
                 message = (
-                    f"🔥 {score} MATCH — {job.get('title')}\n\n"
+                    f"🔥 {score}/10 MATCH — {job.get('title')}\n\n"
                     f"🏢 {match.get('company', 'Unknown')}\n"
                     f"🌐 {job.get('source')}\n\n"
                 )

@@ -1,5 +1,0 @@
-Determine if this is a real internship.
-
-Return JSON:
-
-- is_real_internship
