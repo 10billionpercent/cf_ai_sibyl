@@ -14,6 +14,7 @@ load_dotenv()
 
 ACCOUNT_ID = os.getenv("CLOUDFLARE_ACCOUNT_ID")
 CLOUDFLARE_API_TOKEN = os.getenv("CLOUDFLARE_API_TOKEN")
+CLOUDFLARE_DATABASE_ID = os.getenv("CLOUDFLARE_DATABASE_ID")
 GROQ_API_TOKEN = os.getenv("GROQ_API_KEY")
 GROQ_FAST_MODEL = os.getenv("GROQ_FAST_MODEL", "llama-3.1-8b-instant")
 GROQ_SLOW_MODEL = os.getenv("GROQ_SLOW_MODEL", "llama-3.3-70b-versatile")
@@ -26,6 +27,36 @@ GROQ_MAX_TOKENS = int(os.getenv("GROQ_MAX_TOKENS", "300"))
 JOB_DESC_MAX_CHARS = int(os.getenv("JOB_DESC_MAX_CHARS", "1200"))
 RESUME_LIST_MAX = int(os.getenv("RESUME_LIST_MAX", "12"))
 PROMPT_PATH = Path("prompts/job_match_prompt.txt")
+D1_ENDPOINT = (
+    f"https://api.cloudflare.com/client/v4/accounts/"
+    f"{ACCOUNT_ID}/d1/database/{CLOUDFLARE_DATABASE_ID}/query"
+)
+
+
+async def _log_llm_error(reason, retry_count, last_error_message):
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            await client.post(
+                D1_ENDPOINT,
+                headers={
+                    "Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "sql": """
+                    INSERT INTO event_logs (event_type, source, status, message, created_at)
+                    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    """,
+                    "params": [
+                        "llm_error",
+                        "llm",
+                        "failed",
+                        f"reason={reason}; retries={retry_count}; last_error={last_error_message}"
+                    ]
+                }
+            )
+    except Exception:
+        pass
 
 
 # -----------------------
@@ -178,29 +209,42 @@ Job Posting:
     url = "https://api.groq.com/openai/v1/chat/completions"
 
     async with httpx.AsyncClient(timeout=60) as client:
+        last_error_reason = None
+        last_error_message = ""
         for attempt in range(1, max_retries + 1):
-            response = await client.post(
-                url,
-                headers={
-                    "Authorization": f"Bearer {GROQ_API_TOKEN}",
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "model": model,
-                    "messages": [
-                        {
-                            "role": "system",
-                            "content": "You are a job matcher. Return JSON only."
-                        },
-                        {
-                            "role": "user",
-                            "content": full_prompt
-                        }
-                    ],
-                    "temperature": 0,
-                    "max_tokens": GROQ_MAX_TOKENS
-                }
-            )
+            try:
+                response = await client.post(
+                    url,
+                    headers={
+                        "Authorization": f"Bearer {GROQ_API_TOKEN}",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "model": model,
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": "You are a job matcher. Return JSON only."
+                            },
+                            {
+                                "role": "user",
+                                "content": full_prompt
+                            }
+                        ],
+                        "temperature": 0,
+                        "max_tokens": GROQ_MAX_TOKENS
+                    }
+                )
+            except httpx.TimeoutException as e:
+                last_error_reason = "timeout"
+                last_error_message = str(e)
+                await asyncio.sleep(retry_delay)
+                continue
+            except httpx.RequestError as e:
+                last_error_reason = "request_error"
+                last_error_message = str(e)
+                await asyncio.sleep(retry_delay)
+                continue
 
             try:
                 result = response.json()
@@ -214,6 +258,8 @@ Job Posting:
 
             if result.get("error", {}).get("code") == "rate_limit_exceeded":
                 message = result.get("error", {}).get("message", "")
+                last_error_reason = "rate_limit"
+                last_error_message = message or "rate_limit_exceeded"
                 wait_seconds = _parse_retry_seconds(message) or retry_delay
                 wait_seconds = max(wait_seconds + 5, 10)
                 print(f"Groq rate limited, retrying in {wait_seconds:.2f}s (attempt {attempt}/{max_retries})")
@@ -230,6 +276,7 @@ Job Posting:
             print("Groq response:", result)
             break
         else:
+            await _log_llm_error(last_error_reason or "unknown", max_retries, last_error_message or "retries_exhausted")
             raise RuntimeError("Groq rate limit exceeded after retries")
 
     content = result["choices"][0]["message"]["content"]

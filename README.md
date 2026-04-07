@@ -142,7 +142,6 @@ last_seen_at DATETIME
 id INTEGER PRIMARY KEY
 event_type TEXT
 source TEXT
-company TEXT
 status TEXT
 message TEXT
 created_at DATETIME

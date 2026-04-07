@@ -252,7 +252,7 @@ async def fetch_jobs():
 
         try:
             fetch_start = time.perf_counter()
-            jobs = fetch_all_jobs()
+            jobs = fetch_all_jobs(resume)
             fetch_seconds = time.perf_counter() - fetch_start
             await insert_event_log(
                 event_type="fetch_complete",
@@ -348,7 +348,7 @@ async def fetch_jobs_stream():
                 return
 
             fetch_start = time.perf_counter()
-            jobs = fetch_all_jobs()
+            jobs = fetch_all_jobs(resume)
             fetch_seconds = time.perf_counter() - fetch_start
             RUNS[run_id]["total"] = len(jobs)
 

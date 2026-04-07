@@ -70,17 +70,17 @@ def _is_internship_title(title):
     return _INTERNSHIP_RE.search(title) is not None
 
 
-def _is_target_role(title):
+def _is_target_role(title, role_keywords, specialization_keywords):
     if not title:
         return False
     t = title.lower()
-    if any(k in t for k in ROLE_KEYWORDS):
+    if any(k in t for k in role_keywords):
         match = re.search(r"software (engineering )?engineer[^a-z0-9]*intern", t)
         if match:
             segment = t[match.end():]
             segment = segment.strip(" ,:-–—()[]")
             if segment:
-                if any(k in segment for k in SPECIALIZATION_KEYWORDS):
+                if any(k in segment for k in specialization_keywords):
                     return True
                 if any(k in segment for k in SPECIALIZATION_ALLOWLIST_TERMS):
                     return True
@@ -121,8 +121,10 @@ def _is_recent(value):
     return dt >= cutoff
 
 
-def fetch_greenhouse_jobs():
+def fetch_greenhouse_jobs(role_keywords=None, specialization_keywords=None):
     companies = _load_companies("greenhouse")
+    role_keywords = role_keywords or ROLE_KEYWORDS
+    specialization_keywords = specialization_keywords or SPECIALIZATION_KEYWORDS
 
     jobs = []
 
@@ -153,7 +155,7 @@ def fetch_greenhouse_jobs():
         internship_jobs = [
             j for j in entries
             if _is_internship_title(j.get("title", ""))
-            and _is_target_role(j.get("title", ""))
+            and _is_target_role(j.get("title", ""), role_keywords, specialization_keywords)
             and _is_recent(j.get("updated_at") or j.get("created_at"))
         ]
 
