@@ -249,7 +249,7 @@ async def jobs(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.edit_text("❌ Backend error")
             return
 
-        await msg.edit_text("🧠 Matching jobs... sending results as they are ready.")
+        await msg.edit_text("🧠 Matching internships... sending results as they are ready.")
 
         context.user_data["last_jobs"] = {}
 
