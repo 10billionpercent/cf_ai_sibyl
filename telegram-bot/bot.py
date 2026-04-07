@@ -44,7 +44,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Commands:\n"
         "/resume — Upload resume\n"
         "/profile — View profile\n"
-        "/test — Send test job\n"
         "/help — Help"
     )
 
@@ -60,47 +59,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Commands:\n"
         "/start\n"
         "/resume\n"
-        "/profile\n"
-        "/test"
+        "/profile"
     )
 
-
-# ----------------------
-# TEST JOB ALERT
-# ----------------------
-
-async def send_test_job(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    keyboard = [
-        [
-            InlineKeyboardButton("👍 Good", callback_data="good"),
-            InlineKeyboardButton("👎 Bad", callback_data="bad")
-        ],
-        [
-            InlineKeyboardButton("🤏 Close", callback_data="close"),
-            InlineKeyboardButton("🚫 Ignore", callback_data="ignore")
-        ]
-    ]
-
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    message = (
-        "🔥 8.9 MATCH — Frontend Intern @ Meow\n\n"
-        "🧠 Why:\n"
-        "• React + UI alignment\n"
-        "• Matches your profile\n\n"
-        "⚠️ Missing:\n"
-        "• Next.js\n\n"
-        "🤔 Uncertainty:\n"
-        "• JD unclear about frontend depth\n\n"
-        "🌍 Remote: Yes\n"
-        "🔗 Apply: example.com"
-    )
-
-    await update.message.reply_text(
-        message,
-        reply_markup=reply_markup
-    )
 
 
 # ----------------------
@@ -199,9 +160,9 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "❌ Failed to parse resume.\nPlease try again."
         )
 
-def format_resume(data):
+def format_resume(data, header="🧠 Resume Parsed"):
 
-    message = "🧠 Resume Parsed\n\n"
+    message = f"{header}\n\n"
 
     if data.get("role"):
         message += f"🎯 Role:\n{data['role']}\n\n"
@@ -225,14 +186,21 @@ def format_resume(data):
 
 async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    await update.message.reply_text(
-        "🧠 Your Profile\n\n"
-        "Role: Frontend-focused\n"
-        "Skills:\n"
-        "• React\n"
-        "• Python\n"
-        "• UI"
-    )
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            response = await client.get("http://127.0.0.1:8000/latest-resume")
+        if response.status_code != 200:
+            await update.message.reply_text("⚠️ Could not load your latest resume.")
+            return
+        data = response.json()
+        if data.get("error"):
+            await update.message.reply_text("⚠️ No resume found yet.")
+            return
+        message = format_resume(data, header="🧠 Your Profile")
+        await update.message.reply_text(message)
+    except Exception as e:
+        logger.error(f"Profile fetch failed: {e}")
+        await update.message.reply_text("⚠️ Could not load your latest resume.")
 
 def feedback_keyboard(job_id):
 
@@ -391,7 +359,6 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(CommandHandler("test", send_test_job))
     app.add_handler(CommandHandler("resume", resume))
     app.add_handler(CommandHandler("profile", profile))
     app.add_handler(CommandHandler("jobs", jobs))

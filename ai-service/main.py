@@ -227,6 +227,29 @@ async def parse_resume_endpoint(file: UploadFile = File(...)):
 
 
 # -----------------------
+# LATEST RESUME ENDPOINT
+# -----------------------
+
+@app.get("/latest-resume")
+async def latest_resume():
+    try:
+        resume = resumes_collection.find_one(
+            sort=[("created_at", -1)]
+        )
+    except Exception:
+        resume = None
+
+    if not resume:
+        resume = _get_latest_resume_fallback()
+
+    if not resume:
+        return {"error": "No resume found"}
+
+    resume_safe = json.loads(json.dumps(resume, default=str))
+    return resume_safe
+
+
+# -----------------------
 # FETCH JOBS ENDPOINT
 # -----------------------
 
