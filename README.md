@@ -263,7 +263,14 @@ After starting the bot:
 1. Create a Telegram bot using BotFather and copy the token.
 2. Add the token to your `.env` file as `BOT_TOKEN`.
 3. Open Telegram and start a chat with your bot.
-4. Send `/jobs` to receive internship matches.
+4. (Optional) Upload your resume using:
+   `/resume`  
+   - This will parse your resume and personalize job matching.
+
+5. If you do not upload a resume:
+   - Sibyl will use a sample profile from `resumes.json` for demonstration.
+
+6. Send `/jobs` to receive internship matches.
 
 ---
 
