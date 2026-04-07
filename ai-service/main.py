@@ -157,7 +157,7 @@ async def insert_event_log(
     INSERT INTO event_logs (event_type, source, status, message, created_at)
     VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
     """
-    result = await execute_query(sql, [event_type, source, company, status, message])
+    result = await execute_query(sql, [event_type, source, status, message])
     if not result.get("success"):
         _log_event_fallback(event_type, source, status, message)
 
