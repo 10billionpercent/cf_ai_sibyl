@@ -162,15 +162,15 @@ All other jobs are logged only in D1.
 
 # JSON Fallback (No MongoDB)
 
-If you do not want to configure MongoDB for a quick demo, you can use a JSON fallback for companies. This repo includes a `companies.json` snapshot for testing.
+If you do not want to configure MongoDB for a quick demo, you can use JSON fallbacks. This repo includes `companies.json` and `resumes.json` snapshots for testing.
 
-The fetchers automatically fall back to `companies.json` if MongoDB is unavailable.
+The fetchers automatically fall back to `companies.json` if MongoDB is unavailable. Resume lookups fall back to `resumes.json`, and resume uploads append to `resumes.json` when MongoDB is not reachable. Saved jobs (from positive feedback) fall back to `jobs.json` if MongoDB is not reachable.
 
 For quick testing without MongoDB, you can also:
 - Keep a `companies.json` file checked in.
 - Manually store sample resumes and job outputs as JSON for local inspection.
 
-Note: MongoDB is still required if you want resume uploads and feedback-saved jobs.
+Note: MongoDB is recommended if you want resume uploads and feedback-saved jobs.
 
 ---
 

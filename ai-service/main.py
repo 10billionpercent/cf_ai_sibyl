@@ -5,6 +5,7 @@ import time
 import hashlib
 import asyncio
 import uuid
+from pathlib import Path
 
 from fastapi import FastAPI, UploadFile, File, Body
 
@@ -31,6 +32,52 @@ D1_ENDPOINT = (
     f"https://api.cloudflare.com/client/v4/accounts/"
     f"{CLOUDFLARE_ACCOUNT_ID}/d1/database/{CLOUDFLARE_DATABASE_ID}/query"
 )
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+RESUMES_JSON_PATHS = [REPO_ROOT / "resumes.json"]
+JOBS_JSON_PATHS = [REPO_ROOT / "jobs.json"]
+
+
+def _load_resumes_json():
+    for path in RESUMES_JSON_PATHS:
+        if path.exists():
+            try:
+                return json.loads(path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+    return []
+
+
+def _save_resumes_json(resumes):
+    path = RESUMES_JSON_PATHS[0]
+    path.write_text(json.dumps(resumes, indent=2), encoding="utf-8")
+
+
+def _get_latest_resume_fallback():
+    resumes = _load_resumes_json()
+    if not resumes:
+        return None
+    def _created_at_key(item):
+        value = item.get("created_at")
+        if isinstance(value, str):
+            return value
+        return ""
+    return sorted(resumes, key=_created_at_key, reverse=True)[0]
+
+
+def _load_jobs_json():
+    for path in JOBS_JSON_PATHS:
+        if path.exists():
+            try:
+                return json.loads(path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+    return []
+
+
+def _save_jobs_json(jobs):
+    path = JOBS_JSON_PATHS[0]
+    path.write_text(json.dumps(jobs, indent=2), encoding="utf-8")
 
 
 async def execute_query(sql: str, params: list = []):
@@ -166,9 +213,15 @@ async def parse_resume_endpoint(file: UploadFile = File(...)):
 
     result["created_at"] = datetime.now(timezone.utc)
 
-    inserted = resumes_collection.insert_one(result)
-
-    result["_id"] = str(inserted.inserted_id)
+    try:
+        inserted = resumes_collection.insert_one(result)
+        result["_id"] = str(inserted.inserted_id)
+    except Exception:
+        resumes = _load_resumes_json()
+        safe_result = json.loads(json.dumps(result, default=str))
+        resumes.append(safe_result)
+        _save_resumes_json(resumes)
+        result["_id"] = "local-json"
 
     return result
 
@@ -181,9 +234,15 @@ async def parse_resume_endpoint(file: UploadFile = File(...)):
 async def fetch_jobs():
 
     # get latest resume
-    resume = resumes_collection.find_one(
-        sort=[("created_at", -1)]
-    )
+    try:
+        resume = resumes_collection.find_one(
+            sort=[("created_at", -1)]
+        )
+    except Exception:
+        resume = None
+
+    if not resume:
+        resume = _get_latest_resume_fallback()
 
     if not resume:
         return {"error": "No resume found"}
@@ -273,9 +332,15 @@ async def fetch_jobs_stream():
 
     async def runner():
         try:
-            resume = resumes_collection.find_one(
-                sort=[("created_at", -1)]
-            )
+            try:
+                resume = resumes_collection.find_one(
+                    sort=[("created_at", -1)]
+                )
+            except Exception:
+                resume = None
+
+            if not resume:
+                resume = _get_latest_resume_fallback()
 
             if not resume:
                 RUNS[run_id]["status"] = "error"
@@ -377,16 +442,22 @@ async def save_job(job: dict = Body(...)):
     job["saved_from_feedback"] = True
     job["saved_at"] = now
 
-    result = jobs_collection.update_one(
-        _pick_filter(job),
-        {
-            "$set": job,
-            "$setOnInsert": {"created_at": now}
-        },
-        upsert=True
-    )
-
-    return {"status": "ok", "updated": result.modified_count, "upserted": bool(result.upserted_id)}
+    try:
+        result = jobs_collection.update_one(
+            _pick_filter(job),
+            {
+                "$set": job,
+                "$setOnInsert": {"created_at": now}
+            },
+            upsert=True
+        )
+        return {"status": "ok", "updated": result.modified_count, "upserted": bool(result.upserted_id)}
+    except Exception:
+        jobs = _load_jobs_json()
+        safe_job = json.loads(json.dumps(job, default=str))
+        jobs.append(safe_job)
+        _save_jobs_json(jobs)
+        return {"status": "ok", "updated": 0, "upserted": True, "fallback": "jobs.json"}
 
 
 # -----------------------
